@@ -65,17 +65,16 @@ async def on_ready():
 def paypal_webhook():
     data = request.get_json(silent=True) or {}
     event_type = data.get("event_type", "UNKNOWN")
+    print("✅ PayPal webhook reçu:", event_type, flush=True)
 
     if event_type == "PAYMENT.CAPTURE.COMPLETED":
         resource = data.get("resource", {})
-        
         amount = resource.get("amount", {}).get("value", "?")
-        currency = resource.get("amount", {}).get("currency_code", "EUR")
+        currency = resource.get("amount", {}).get("currency_code", "CHF")
         transaction_id = resource.get("id", "N/A")
-        
+
         payer = resource.get("payer", {})
-        name_data = payer.get("name", {})
-        first_name = name_data.get("given_name", "Donateur")
+        first_name = payer.get("name", {}).get("given_name", "Donateur")
 
         content = (
             f"💸 **Paiement reçu**\n"
@@ -85,105 +84,49 @@ def paypal_webhook():
         )
 
         if DISCORD_FINANCE_WEBHOOK:
-            requests.post(DISCORD_FINANCE_WEBHOOK, json={"content": content})
+            r = requests.post(DISCORD_FINANCE_WEBHOOK, json={"content": content}, timeout=10)
+            print("➡️ Discord status:", r.status_code, flush=True)
+        else:
+            print("❌ DISCORD_FINANCE_WEBHOOK manquant", flush=True)
 
     return "OK", 200
 
-
 @bot.event
-async def on_message(message):
+async def on_message(message: discord.Message):
+    # Ignore le bot
     if message.author == bot.user:
         return
 
-    if '@everyone' in message.content or '@here' in message.content:
-        guild_id = message.guild.id
-        allowed_role_ids = ADMIN_ROLES.get(guild_id, [])
-
-        if not any(role.id in allowed_role_ids for role in message.author.roles):
-            try:
-                await message.delete()
-            except discord.NotFound:
-                pass
-            await message.channel.send(
-                "Ton message contenant 'everyone' ou 'here' a été supprimé car tu n'as pas les permissions.",
-                delete_after=30
-            )
-
-            log_channel_id = LOG_CHANNELS.get(guild_id)
-            log_channel = message.guild.get_channel(log_channel_id) if log_channel_id else None
-            if log_channel:
-                embed = Embed(
-                    title="🔒 Message supprimé",
-                    description=f"**Auteur :** {message.author.mention}\n"
-                                f"**Contenu :**\n```{message.content}```",
-                    color=0xFF0000
-                )
-                embed.set_footer(text=f"Salon : #{message.channel.name} • ID : {message.channel.id}")
-                embed.timestamp = message.created_at
-                await log_channel.send(embed=embed)
+    # Toujours process les commandes à la fin (ou au début)
+    # Mais PAS deux fois.
+    # (Je le mets à la fin pour que tes filtres puissent delete avant commande)
+    
+    # Ignore DM
+    if not message.guild:
+        await bot.process_commands(message)
+        return
 
     guild_id = message.guild.id
     allowed_role_ids = ADMIN_ROLES.get(guild_id, [])
     log_channel_id = LOG_CHANNELS.get(guild_id)
     log_channel = message.guild.get_channel(log_channel_id) if log_channel_id else None
-    channels_to_check = DISCORD_LINK_CHANNELS.get(guild_id, [])
 
-    if message.channel.id in channels_to_check and "discord.gg" in message.content.lower():
-    # ✅ Vérifie si l'utilisateur a au moins un rôle autorisé (staff)
-        if not any(role.id in allowed_role_ids for role in getattr(message.author, "roles", [])):
-            try:
-                await message.delete()
-            except discord.NotFound:
-                pass
+    # 3) Boost (tel que tu fais)
+    if message.type == discord.MessageType.premium_guild_subscription:
+        channel_id = BOOST_ANNOUNCE_CHANNELS.get(guild_id)
+        channel = message.guild.get_channel(channel_id) if channel_id else message.channel
 
-            await message.channel.send(
-                "⛔ Lien Discord non autorisé. Ton message a été supprimé.",
-                delete_after=10
+        if channel:
+            embed = discord.Embed(
+                title="🚀 Nouveau boost serveur !",
+                description=f"{message.author.mention} vient de booster le serveur ! Merci beaucoup pour ton soutien ❤️",
+                color=0x9b59ff
             )
+            embed.set_footer(text="Alliance RP • Merci pour votre soutien 💜")
+            await channel.send(embed=embed)
 
-            if log_channel:
-                embed = discord.Embed(
-                    title="🔗 Lien Discord supprimé",
-                    description="Un lien Discord a été posté par un survivant.",
-                    color=discord.Color.orange()
-                )
-                embed.add_field(name="Auteur", value=message.author.mention, inline=True)
-                embed.add_field(name="Salon", value=message.channel.mention, inline=True)
-                embed.add_field(name="Contenu", value=f"```{message.content}```", inline=False)
-                embed.timestamp = message.created_at
-                await log_channel.send(embed=embed)
-    
-
+    # Enfin, process les commandes UNE fois
     await bot.process_commands(message)
-
-@bot.event
-async def on_message(message: discord.Message):
-    await bot.process_commands(message)
-
-    if not message.guild:
-        return
-
-    # Détecte uniquement un boost
-    if message.type != discord.MessageType.premium_guild_subscription:
-        return
-
-    guild = message.guild
-    booster = message.author
-
-    channel_id = BOOST_ANNOUNCE_CHANNELS.get(guild.id)
-    channel = guild.get_channel(channel_id) if channel_id else message.channel
-    if not channel:
-        return
-
-    embed = discord.Embed(
-        title="🚀 Nouveau boost serveur !",
-        description=f"{booster.mention} vient de booster le serveur ! Merci beaucoup pour ton soutien ❤️",
-        color=0x9b59ff
-    )
-
-    embed.set_footer(text="Alliance RP • Merci pour votre soutien 💜")
-
-    await channel.send(embed=embed)
 
 
 
@@ -469,4 +412,5 @@ async def test_boost(interaction: discord.Interaction):
 keep_alive()
 
 bot.run(TOKEN)
+
 
