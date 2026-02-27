@@ -7,9 +7,14 @@ from discord import app_commands, Embed, Colour
 from dotenv import load_dotenv
 from datetime import datetime
 import io
+import requests
+from flask import Flask, request
 
+
+app = Flask(__name__)
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
+DISCORD_FINANCE_WEBHOOK = os.getenv("DISCORD_FINANCE_WEBHOOK", "")
 OWNER_ID = 445238427865055232
 
 BOOST_ANNOUNCE_CHANNELS = {
@@ -55,6 +60,34 @@ async def on_ready():
         print(f"Commandes slash synchronisées : {len(synced)}")
     except Exception as e:
         print(f"Erreur lors de la synchronisation des commandes : {e}")
+
+@app.post("/paypal-webhook")
+def paypal_webhook():
+    data = request.get_json(silent=True) or {}
+    event_type = data.get("event_type", "UNKNOWN")
+
+    if event_type == "PAYMENT.CAPTURE.COMPLETED":
+        resource = data.get("resource", {})
+        
+        amount = resource.get("amount", {}).get("value", "?")
+        currency = resource.get("amount", {}).get("currency_code", "EUR")
+        transaction_id = resource.get("id", "N/A")
+        
+        payer = resource.get("payer", {})
+        name_data = payer.get("name", {})
+        first_name = name_data.get("given_name", "Donateur")
+
+        content = (
+            f"💸 **Paiement reçu**\n"
+            f"👤 Donateur : {first_name}\n"
+            f"💰 Montant : {amount} {currency}\n"
+            f"🧾 Transaction : `{transaction_id}`"
+        )
+
+        if DISCORD_FINANCE_WEBHOOK:
+            requests.post(DISCORD_FINANCE_WEBHOOK, json={"content": content})
+
+    return "OK", 200
 
 
 @bot.event
@@ -434,4 +467,5 @@ async def test_boost(interaction: discord.Interaction):
     
 
 keep_alive()
+
 bot.run(TOKEN)
