@@ -14,7 +14,7 @@ from flask import Flask, request
 app = Flask(__name__)
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
-DISCORD_FINANCE_WEBHOOK = os.getenv("DISCORD_FINANCE_WEBHOOK", "")
+DISCORD_FINANCE_WEBHOOK = os.getenv("DISCORD_FINANCE_WEBHOOK")
 OWNER_ID = 445238427865055232
 
 BOOST_ANNOUNCE_CHANNELS = {
@@ -469,3 +469,4 @@ async def test_boost(interaction: discord.Interaction):
 keep_alive()
 
 bot.run(TOKEN)
+
